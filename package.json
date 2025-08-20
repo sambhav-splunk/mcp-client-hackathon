@@ -1,0 +1,35 @@
+{
+  "name": "pr-design-review-bot",
+  "version": "1.0.0",
+  "description": "A bot that reviews PRs against Confluence design documents using GitHub and Atlassian MCP clients",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "test-setup": "node scripts/test-setup.js",
+    "debug-azure": "node scripts/azure-openai-debug.js",
+    "list-deployments": "node scripts/list-deployments.js",
+    "test-resource": "node scripts/test-resource-name.js",
+    "test-original": "node scripts/test-original-endpoint.js",
+    "test-custom": "node scripts/test-custom-endpoint.js"
+  },
+  "keywords": [
+    "github",
+    "confluence",
+    "pr-review",
+    "mcp",
+    "ai"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.6.0",
+    "dotenv": "^16.3.1",
+    "openai": "^4.20.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.0"
+  }
+}
