@@ -30,6 +30,13 @@ export const config = {
   
   app: {
     logLevel: process.env.LOG_LEVEL || 'info'
+  },
+
+  webhook: {
+    port: process.env.WEBHOOK_PORT || 3003,
+    secret: process.env.GITHUB_WEBHOOK_SECRET || null,
+    path: process.env.WEBHOOK_PATH || '/webhook',
+    skipSignatureValidation: process.env.SKIP_WEBHOOK_SIGNATURE_VALIDATION === 'true'
   }
 };
 
