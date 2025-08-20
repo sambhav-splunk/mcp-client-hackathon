@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meeting Summary & Design Document Updater</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            font-weight: 300;
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .form-container {
+            padding: 40px;
+        }
+
+        .form-group {
+            margin-bottom: 30px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+            font-size: 1rem;
+        }
+
+        input, textarea {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e1e8ed;
+            border-radius: 10px;
+            font-size: 1rem;
+            transition: border-color 0.3s ease, box-shadow 0.3s ease;
+            font-family: inherit;
+        }
+
+        input:focus, textarea:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 120px;
+        }
+
+        .textarea-large {
+            min-height: 200px;
+        }
+
+        .submit-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 18px 40px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            width: 100%;
+            margin-top: 20px;
+        }
+
+        .submit-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.3);
+        }
+
+        .submit-btn:active {
+            transform: translateY(0);
+        }
+
+        .submit-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .result {
+            display: none;
+            margin-top: 30px;
+            padding: 20px;
+            border-radius: 10px;
+            border-left: 4px solid #28a745;
+            background-color: #d4edda;
+            color: #155724;
+        }
+
+        .error {
+            border-left-color: #dc3545;
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+
+        .help-text {
+            font-size: 0.9rem;
+            color: #666;
+            margin-top: 5px;
+            font-style: italic;
+        }
+
+        .feature-highlight {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 30px;
+            border-left: 4px solid #667eea;
+        }
+
+        .feature-highlight h3 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .feature-highlight p {
+            color: #666;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📝 Design Document Revision from Meeting Outcomes</h1>
+            <!-- <p>Summarize meetings and update design documents automatically</p> -->
+        </div>
+
+        <div class="form-container">
+            <!-- <div class="feature-highlight">
+                <h3>🚀 How it works</h3>
+                <p>This tool helps you process meeting summaries and transcripts to automatically update your Confluence design documents. Simply provide the meeting details, and our AI will analyze the discussion and update the relevant design document with any changes or action items discussed.</p>
+            </div> -->
+
+            <form id="meetingForm">
+                <div class="form-group">
+                    <label for="confluence_design_document_url">
+                        🔗 Confluence Design Document URL *
+                    </label>
+                    <input 
+                        type="url" 
+                        id="confluence_design_document_url" 
+                        name="confluence_design_document_url" 
+                        required 
+                        placeholder="https://yourcompany.atlassian.net/wiki/spaces/TECH/pages/123456/Design+Document"
+                    >
+                    <div class="help-text">
+                        The Confluence page URL where the design document is located. This document will be updated with meeting insights.
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="meeting_summary">
+                        📋 Meeting Summary (Notes and Action Items) *
+                    </label>
+                    <textarea 
+                        id="meeting_summary" 
+                        name="meeting_summary" 
+                        required 
+                        placeholder="Enter meeting summary including key decisions, action items, and next steps...
+
+Example:
+- Decided to implement OAuth 2.0 authentication
+- Action: John to create user stories by Friday
+- Action: Sarah to research third-party libraries
+- Next meeting scheduled for next Tuesday"
+                        class="textarea-large"
+                    ></textarea>
+                    <div class="help-text">
+                        Include key decisions, action items, and important notes from the meeting.
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="meeting_transcript">
+                        🎙️ Meeting Transcript
+                    </label>
+                    <textarea 
+                        id="meeting_transcript" 
+                        name="meeting_transcript" 
+                        placeholder="Paste the meeting transcript here (optional but recommended for better accuracy)...
+
+This field is optional but helps provide context for better summarization."
+                        class="textarea-large"
+                    ></textarea>
+                    <div class="help-text">
+                        Optional: Full transcript of the meeting for more detailed context.
+                    </div>
+                </div>
+
+                <button type="submit" class="submit-btn" id="submitBtn">
+                    🚀 Process Meeting & Update Document
+                </button>
+            </form>
+
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>Processing meeting summary and updating design document...</p>
+                <p><small>This may take a few moments</small></p>
+            </div>
+
+            <div class="result" id="result"></div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('meetingForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const submitBtn = document.getElementById('submitBtn');
+            const loading = document.getElementById('loading');
+            const result = document.getElementById('result');
+            
+            // Get form data
+            const formData = new FormData(this);
+            const data = {
+                confluence_design_document_url: formData.get('confluence_design_document_url'),
+                meeting_summary: formData.get('meeting_summary'),
+                meeting_transcript: formData.get('meeting_transcript')
+            };
+
+            // Validate required fields
+            if (!data.confluence_design_document_url || !data.meeting_summary) {
+                showResult('Please fill in all required fields.', true);
+                return;
+            }
+
+            // Show loading state
+            submitBtn.disabled = true;
+            loading.style.display = 'block';
+            result.style.display = 'none';
+
+            try {
+                const response = await fetch('/api/process-meeting', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                const responseData = await response.json();
+
+                if (response.ok) {
+                    showResult(`✅ Success! ${responseData.message}`, false);
+                    if (responseData.updatedDocumentUrl) {
+                        showResult(`✅ Success! ${responseData.message}\n\nUpdated document: ${responseData.updatedDocumentUrl}`, false);
+                    }
+                } else {
+                    showResult(`❌ Error: ${responseData.error || 'An unknown error occurred'}`, true);
+                }
+            } catch (error) {
+                showResult(`❌ Network Error: ${error.message}`, true);
+            } finally {
+                // Hide loading state
+                submitBtn.disabled = false;
+                loading.style.display = 'none';
+            }
+        });
+
+        function showResult(message, isError) {
+            const result = document.getElementById('result');
+            result.textContent = message;
+            result.className = isError ? 'result error' : 'result';
+            result.style.display = 'block';
+            
+            // Scroll to result
+            result.scrollIntoView({ behavior: 'smooth' });
+        }
+    </script>
+</body>
+</html>

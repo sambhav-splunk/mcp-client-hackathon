@@ -330,6 +330,292 @@ Always format your response as a proper GitHub PR comment with markdown formatti
   }
 
   /**
+   * Analyze meeting content against design document and suggest updates
+   * @param {Object} meetingData - Object containing design document, meeting summary, and transcript
+   * @returns {Object} Analysis result with updates and action items
+   */
+  async analyzeMeetingContent(meetingData) {
+    try {
+      logger.info('Analyzing meeting content for design document updates...');
+      
+      const { designDocument, meetingSummary, meetingTranscript, confluenceUrl } = meetingData;
+      
+      const prompt = this.buildMeetingAnalysisPrompt(designDocument, meetingSummary, meetingTranscript, confluenceUrl);
+      
+      const modelOrDeployment = config.llm.isAzure ? 
+        (config.llm.deploymentName || config.llm.model) : 
+        config.llm.model;
+
+      logger.info(`Making LLM API call for meeting analysis with:`);
+      logger.info(`  Model/Deployment: ${modelOrDeployment}`);
+      
+      try {
+        // Prepare request body
+        let requestBody;
+        let isCustomResponsesEndpoint = config.llm.baseUrl.includes('cognitiveservices.azure.com');
+        
+        if (isCustomResponsesEndpoint) {
+          // Custom Azure responses endpoint format
+          requestBody = {
+            model: modelOrDeployment,
+            input: [
+              {
+                role: "user",
+                content: [
+                  {
+                    type: "input_text",
+                    text: `${this.getMeetingSystemPrompt()}\n\nUser Query: ${prompt}`
+                  }
+                ]
+              }
+            ]
+          };
+        } else {
+          // Standard OpenAI format
+          requestBody = {
+            model: modelOrDeployment,
+            messages: [
+              {
+                role: 'system',
+                content: this.getMeetingSystemPrompt()
+              },
+              {
+                role: 'user', 
+                content: prompt
+              }
+            ]
+          };
+
+          // Handle model-specific parameters
+          if (config.llm.model === 'gpt-5-nano') {
+            requestBody.temperature = 1;
+          } else {
+            requestBody.temperature = 0.3;
+          }
+
+          // Token parameter based on API version
+          if (config.llm.isAzure && config.llm.apiVersion >= '2024-08-01-preview') {
+            requestBody.max_completion_tokens = 3000;
+          } else {
+            requestBody.max_tokens = 3000;
+          }
+        }
+
+        let response;
+        if (isCustomResponsesEndpoint) {
+          const axios = (await import('axios')).default;
+          const fullUrl = `${config.llm.baseUrl}/openai/responses?api-version=${config.llm.apiVersion}`;
+          
+          const axiosResponse = await axios.post(fullUrl, requestBody, {
+            headers: {
+              'Content-Type': 'application/json',
+              'api-key': config.llm.openaiApiKey
+            }
+          });
+          
+          response = {
+            choices: [{
+              message: {
+                content: this.extractContentFromCustomResponse(axiosResponse.data)
+              }
+            }]
+          };
+        } else {
+          response = await this.openai.chat.completions.create(requestBody);
+        }
+        
+        const analysis = response.choices[0].message.content;
+        logger.info('Meeting analysis completed');
+        logger.debug('Raw LLM response:', analysis);
+        
+        // Parse the analysis result
+        const parsedResult = this.parseMeetingAnalysis(analysis);
+        logger.debug('Parsed analysis result:', JSON.stringify(parsedResult, null, 2));
+        
+        return parsedResult;
+        
+      } catch (error) {
+        logger.error(`Meeting analysis API call failed:`, error.message);
+        throw error;
+      }
+    } catch (error) {
+      logger.error('Failed to analyze meeting content:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Build the meeting analysis prompt for the LLM
+   * @param {Object} designDocument - Design document content
+   * @param {string} meetingSummary - Meeting summary
+   * @param {string} meetingTranscript - Meeting transcript
+   * @param {string} confluenceUrl - Confluence document URL
+   * @returns {string} The constructed prompt
+   */
+  buildMeetingAnalysisPrompt(designDocument, meetingSummary, meetingTranscript, confluenceUrl) {
+    return `
+Please analyze the following meeting summary and transcript to identify changes that should be made to the design document.
+
+## Current Design Document:
+Title: ${designDocument.content?.title || 'N/A'}
+URL: ${confluenceUrl}
+
+Content:
+${designDocument.textContent || 'No content available'}
+
+## Meeting Summary:
+${meetingSummary}
+
+## Meeting Transcript:
+${meetingTranscript || 'No transcript provided'}
+
+## Analysis Request:
+Please analyze the meeting content and provide:
+
+1. **Summary**: A brief summary of the key points discussed in the meeting
+2. **Design Changes**: Specific changes or updates that should be made to the design document based on the meeting discussion
+3. **Action Items**: Extract clear action items with assignees if mentioned
+4. **Should Update**: Determine if the design document should be updated (true/false)
+5. **Updated Content**: If updates are needed, provide the HTML content to append to the design document
+
+Please format your response as JSON with the following structure:
+{
+  "summary": "Brief summary of key meeting points",
+  "designChanges": ["List of specific changes discussed"],
+  "actionItems": ["List of action items with assignees"],
+  "shouldUpdate": true/false,
+  "updatedContent": "HTML content to append to document if updates needed",
+  "reasoning": "Explanation of why updates are or aren't needed"
+}
+
+Focus on:
+- Technical decisions that affect the design
+- New requirements or features discussed
+- Changes to existing specifications
+- Architecture or implementation changes
+- Performance or security considerations
+- Action items that need to be tracked
+
+Only suggest updates if there are concrete changes to the design that were decided in the meeting.
+`;
+  }
+
+  /**
+   * Get the system prompt for meeting analysis
+   * @returns {string} System prompt
+   */
+  getMeetingSystemPrompt() {
+    return `
+You are an expert technical writer and meeting analyst specializing in extracting actionable insights from design discussions and updating technical documentation. Your role is to:
+
+1. Analyze meeting summaries and transcripts for technical decisions
+2. Identify changes that should be reflected in design documents
+3. Extract clear action items and next steps
+4. Determine when design documents need updates
+5. Generate appropriate HTML content for Confluence pages
+
+Your analysis should be:
+- Focused on concrete technical decisions and changes
+- Clear about what specifically changed or was decided
+- Conservative about suggesting updates (only when truly needed)
+- Detailed in extracting action items with context
+- Professional and well-structured
+
+Always respond with valid JSON format and ensure HTML content is properly formatted for Confluence.
+`;
+  }
+
+  /**
+   * Parse the meeting analysis response from LLM
+   * @param {string} analysisText - Raw analysis from LLM
+   * @returns {Object} Parsed analysis object
+   */
+  parseMeetingAnalysis(analysisText) {
+    try {
+      // Try to parse as JSON first
+      const jsonMatch = analysisText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          const analysis = JSON.parse(jsonMatch[0]);
+          return {
+            summary: analysis.summary || 'No summary provided',
+            designChanges: analysis.designChanges || [],
+            actionItems: analysis.actionItems || [],
+            shouldUpdate: analysis.shouldUpdate || false,
+            updatedContent: analysis.updatedContent || '',
+            reasoning: analysis.reasoning || 'No reasoning provided'
+          };
+        } catch (parseError) {
+          logger.warn('Failed to parse JSON response, falling back to text parsing');
+        }
+      }
+
+      // Fallback to text parsing
+      return {
+        summary: 'Meeting was analyzed but could not extract structured summary',
+        designChanges: [],
+        actionItems: this.extractActionItemsFromText(analysisText),
+        shouldUpdate: analysisText.toLowerCase().includes('should update') || 
+                     analysisText.toLowerCase().includes('needs update'),
+        updatedContent: this.extractUpdatedContentFromText(analysisText),
+        reasoning: 'Text-based analysis'
+      };
+    } catch (error) {
+      logger.error('Error parsing meeting analysis:', error);
+      return {
+        summary: 'Error parsing meeting analysis',
+        designChanges: [],
+        actionItems: [],
+        shouldUpdate: false,
+        updatedContent: '',
+        reasoning: 'Parsing error occurred'
+      };
+    }
+  }
+
+  /**
+   * Extract action items from unstructured text
+   * @param {string} text - Analysis text
+   * @returns {string[]} Array of action items
+   */
+  extractActionItemsFromText(text) {
+    const actionItems = [];
+    const lines = text.split('\n');
+    
+    for (const line of lines) {
+      if (line.toLowerCase().includes('action') || 
+          line.toLowerCase().includes('todo') ||
+          line.includes('[ ]') ||
+          (line.trim().startsWith('-') && line.toLowerCase().includes('assign'))) {
+        actionItems.push(line.trim());
+      }
+    }
+    
+    return actionItems;
+  }
+
+  /**
+   * Extract updated content from unstructured text
+   * @param {string} text - Analysis text
+   * @returns {string} HTML content
+   */
+  extractUpdatedContentFromText(text) {
+    // Look for HTML-like content or structured updates
+    const htmlMatch = text.match(/<[^>]+>[\s\S]*<\/[^>]+>/);
+    if (htmlMatch) {
+      return htmlMatch[0];
+    }
+    
+    // Look for content after "Updated Content:" or similar
+    const contentMatch = text.match(/updated content[:\s]+([\s\S]*?)(?=\n\n|\n#|$)/i);
+    if (contentMatch) {
+      return `<p>${contentMatch[1].trim().replace(/\n/g, '<br/>')}</p>`;
+    }
+    
+    return '';
+  }
+
+  /**
    * Format the analysis as a GitHub comment
    * @param {string} analysis - Raw analysis from LLM
    * @param {string} designDocUrl - URL of the design document

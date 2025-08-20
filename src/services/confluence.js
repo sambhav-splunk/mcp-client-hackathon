@@ -152,6 +152,244 @@ export class ConfluenceService {
   }
 
   /**
+   * Update Confluence page content
+   * @param {string} pageId - The page ID to update
+   * @param {string} newContent - The new content in storage format
+   * @param {string} title - The page title
+   * @param {number} currentVersion - The current version number of the page
+   * @param {string} status - The page status (default: 'current')
+   * @returns {Object} Updated page data
+   */
+  async updatePageContent(pageId, newContent, title, currentVersion, status = 'current') {
+    try {
+      logger.info(`Updating Confluence page ${pageId}...`);
+      
+      const updateData = {
+        id: pageId,
+        type: 'page',
+        status: status,
+        title: title,
+        body: {
+          storage: {
+            value: newContent,
+            representation: 'storage'
+          }
+        },
+        version: {
+          number: currentVersion + 1,
+          message: 'Updated from meeting summary tool'
+        }
+      };
+
+      // Log the update data for debugging
+      logger.debug('Update data being sent to Confluence:', JSON.stringify(updateData, null, 2));
+      logger.debug('Content length:', newContent.length);
+
+      const response = await this.apiClient.put(`/pages/${pageId}`, updateData);
+      
+      logger.info('Successfully updated Confluence page');
+      logger.debug('Updated page data:', response.data?.title || 'No title available');
+
+      return {
+        success: true,
+        pageData: response.data,
+        pageId
+      };
+    } catch (error) {
+      logger.error('Failed to update Confluence page:', error.message);
+      
+      // Log detailed error information for debugging
+      if (error.response) {
+        logger.error('Response status:', error.response.status);
+        logger.error('Response headers:', error.response.headers);
+        logger.error('Response data:', JSON.stringify(error.response.data, null, 2));
+      }
+      
+      if (error.response?.status === 404) {
+        throw new Error(`Confluence page with ID ${pageId} not found`);
+      }
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        throw new Error('Unauthorized to update Confluence page. Check your API token and permissions.');
+      }
+      if (error.response?.status === 409) {
+        throw new Error('Confluence page has been modified by someone else. Please refresh and try again.');
+      }
+      if (error.response?.status === 400) {
+        const errorDetails = error.response.data?.errors || error.response.data || 'Unknown validation error';
+        throw new Error(`Bad request when updating Confluence page: ${JSON.stringify(errorDetails)}`);
+      }
+      
+      throw error;
+    }
+  }
+
+  /**
+   * Get current page version for safe updates
+   * @param {string} pageId - The page ID
+   * @returns {Object} Page version information
+   */
+  async getPageVersion(pageId) {
+    try {
+      const response = await this.apiClient.get(`/pages/${pageId}?body-format=storage`);
+      const pageData = response.data;
+      
+      return {
+        version: pageData.version?.number || 1,
+        title: pageData.title,
+        status: pageData.status || 'current',
+        content: pageData.body?.storage?.value || '',
+        pageId
+      };
+    } catch (error) {
+      logger.error('Failed to get page version:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Safely update page content with version checking
+   * @param {string} confluenceUrl - The Confluence page URL
+   * @param {string} newContent - The new content
+   * @returns {Object} Update result
+   */
+  async safeUpdatePageContent(confluenceUrl, newContent) {
+    try {
+      const pageId = this.extractPageId(confluenceUrl);
+      if (!pageId) {
+        throw new Error('Could not extract page ID from Confluence URL');
+      }
+
+      // Get current page version and content
+      const pageInfo = await this.getPageVersion(pageId);
+      
+      // Update the page
+      const result = await this.updatePageContent(
+        pageId, 
+        newContent, 
+        pageInfo.title, 
+        pageInfo.version,
+        pageInfo.status
+      );
+
+      return {
+        success: true,
+        pageId,
+        previousVersion: pageInfo.version,
+        newVersion: pageInfo.version + 1,
+        url: confluenceUrl
+      };
+    } catch (error) {
+      logger.error('Failed to safely update page content:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Append content to existing page (useful for meeting notes)
+   * @param {string} confluenceUrl - The Confluence page URL
+   * @param {string} additionalContent - Content to append
+   * @param {string} sectionTitle - Optional section title for the new content
+   * @returns {Object} Update result
+   */
+  async appendToPage(confluenceUrl, additionalContent, sectionTitle = 'Meeting Update') {
+    try {
+      const pageId = this.extractPageId(confluenceUrl);
+      if (!pageId) {
+        throw new Error('Could not extract page ID from Confluence URL');
+      }
+
+      // Get current page content
+      const pageInfo = await this.getPageVersion(pageId);
+      
+      // Create new content by appending
+      const timestamp = new Date().toLocaleDateString();
+      
+      // Clean and validate the additional content
+      const cleanContent = this.sanitizeContentForConfluence(additionalContent);
+      
+      const newSection = `
+<h2>${sectionTitle} - ${timestamp}</h2>
+${cleanContent}
+<hr />
+`;
+      
+      const updatedContent = pageInfo.content + newSection;
+      
+      // Update the page
+      const result = await this.updatePageContent(
+        pageId, 
+        updatedContent, 
+        pageInfo.title, 
+        pageInfo.version,
+        pageInfo.status
+      );
+
+      return {
+        success: true,
+        pageId,
+        previousVersion: pageInfo.version,
+        newVersion: pageInfo.version + 1,
+        url: confluenceUrl,
+        appendedContent: newSection
+      };
+    } catch (error) {
+      logger.error('Failed to append to page:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Sanitize content for Confluence storage format
+   * @param {string} content - Raw content to sanitize
+   * @returns {string} Sanitized content
+   */
+  sanitizeContentForConfluence(content) {
+    try {
+      if (!content || typeof content !== 'string') {
+        return '<p>No content provided</p>';
+      }
+
+      // Basic HTML validation and cleaning
+      let cleanContent = content;
+
+      // Ensure content is properly escaped
+      cleanContent = cleanContent
+        .replace(/&(?!amp;|lt;|gt;|quot;|#39;)/g, '&amp;')  // Escape unescaped ampersands
+        .replace(/</g, '&lt;').replace(/>/g, '&gt;')  // Escape < and >
+        .replace(/&lt;(\/?(h[1-6]|p|ul|ol|li|strong|em|br|hr|div|span)(\s[^&]*?)?)&gt;/gi, '<$1>'); // Allow safe HTML tags
+
+      // Ensure content is wrapped in proper tags if it's just text
+      if (!cleanContent.includes('<') || !cleanContent.includes('>')) {
+        cleanContent = `<p>${cleanContent}</p>`;
+      }
+
+      // Validate that we have balanced tags for basic HTML elements
+      const tagPattern = /<(\w+)(?:\s[^>]*)?>/g;
+      const closeTagPattern = /<\/(\w+)>/g;
+      
+      const openTags = [...cleanContent.matchAll(tagPattern)].map(match => match[1].toLowerCase());
+      const closeTags = [...cleanContent.matchAll(closeTagPattern)].map(match => match[1].toLowerCase());
+      
+      // For self-closing tags, remove them from validation
+      const selfClosingTags = ['br', 'hr', 'img'];
+      const openTagsFiltered = openTags.filter(tag => !selfClosingTags.includes(tag));
+      
+      // Basic validation - warn if tags don't balance
+      if (openTagsFiltered.length !== closeTags.length) {
+        logger.warn('HTML tags may not be balanced, attempting to fix...');
+        // Wrap in a div to ensure balanced structure
+        cleanContent = `<div>${cleanContent}</div>`;
+      }
+
+      logger.debug('Sanitized content length:', cleanContent.length);
+      return cleanContent;
+    } catch (error) {
+      logger.error('Error sanitizing content for Confluence:', error);
+      return `<p>Error processing content: ${error.message}</p>`;
+    }
+  }
+
+  /**
    * Close the Confluence API client connection (cleanup)
    */
   async close() {

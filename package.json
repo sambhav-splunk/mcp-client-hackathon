@@ -6,10 +6,13 @@
   "type": "module",
   "scripts": {
     "start": "node src/index.js",
+    "web": "node src/web-server.js",
     "dev": "node --watch src/index.js",
+    "dev-web": "node --watch src/web-server.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "test-setup": "node scripts/test-setup.js",
     "debug-azure": "node scripts/azure-openai-debug.js",
+    "debug-confluence": "node scripts/debug-confluence.js",
     "list-deployments": "node scripts/list-deployments.js",
     "test-resource": "node scripts/test-resource-name.js",
     "test-original": "node scripts/test-original-endpoint.js",
@@ -27,6 +30,8 @@
   "dependencies": {
     "axios": "^1.6.0",
     "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "multer": "^1.4.5-lts.1",
     "openai": "^4.20.0"
   },
   "devDependencies": {

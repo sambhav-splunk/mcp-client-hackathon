@@ -10,6 +10,9 @@ An intelligent bot that automatically reviews Pull Requests against Confluence d
 - 💬 **Automated Comments**: Posts detailed review comments directly to GitHub PRs
 - 🔧 **Multiple PR Support**: Can review single or multiple PRs in batch
 - 📝 **Comprehensive Logging**: Detailed logging for debugging and monitoring
+- 🎤 **Meeting Summarization**: NEW - Web UI to process meeting summaries and update design documents
+- 📋 **Action Item Tracking**: Extracts and tracks action items from meeting discussions
+- 🔄 **Document Updates**: Automatically updates Confluence design documents with meeting insights
 
 ## Architecture
 
@@ -97,6 +100,25 @@ Example:
 npm start multiple 123 124 125
 ```
 
+### Meeting Summarization (NEW)
+
+Start the web interface for meeting summarization:
+
+```bash
+npm run web
+```
+
+This will start a web server on `http://localhost:3000` where you can:
+- Enter meeting summaries and transcripts
+- Specify which Confluence design document to update
+- Automatically process the meeting content with AI
+- Update the design document with relevant changes and action items
+
+**For development with auto-reload:**
+```bash
+npm run dev-web
+```
+
 ### Help
 
 ```bash
@@ -105,12 +127,21 @@ npm start --help
 
 ## How It Works
 
+### PR Review Flow
 1. **PR Analysis**: The bot fetches the specified PR details and code changes from GitHub
 2. **Design Document Discovery**: Searches the PR description for `confluence_design_document_url`
 3. **Document Retrieval**: Fetches the design document content from Confluence
 4. **AI Analysis**: Sends PR changes and design document to LLM for analysis
 5. **Review Generation**: LLM generates detailed review comments
 6. **Comment Posting**: Posts the review as a comment on the GitHub PR
+
+### Meeting Summarization Flow (NEW)
+1. **Meeting Input**: User provides meeting summary, transcript, and Confluence design document URL via web interface
+2. **Document Retrieval**: Fetches the current design document content from Confluence
+3. **AI Analysis**: LLM analyzes meeting content against the existing design document
+4. **Change Detection**: Identifies specific changes, decisions, and action items from the meeting
+5. **Document Update**: Automatically appends relevant updates to the Confluence design document
+6. **Action Item Extraction**: Extracts and formats action items for tracking
 
 ## PR Description Format
 
